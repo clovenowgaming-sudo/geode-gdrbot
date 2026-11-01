@@ -1,0 +1,50 @@
+{
+	"geode": "5.11.2",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081"
+	},
+	"version": "1.0.0",
+	"id": "gdrbot.tool",
+	"name": "GDRBot",
+	"developer": "GDRBot",
+	"description": "Bot replay untuk Geometry Dash dengan format GDReplayFormat (.gdr2), lengkap dengan record, play, dan practice fix.",
+	"settings": {
+		"auto-stop": {
+			"name": "Auto Stop Playing",
+			"description": "Berhenti playback otomatis saat macro selesai.",
+			"type": "bool",
+			"default": true
+		},
+		"auto-restart": {
+			"name": "Auto Restart",
+			"description": "Restart level otomatis saat mulai record/play.",
+			"type": "bool",
+			"default": true
+		},
+		"practice-fix": {
+			"name": "Practice Fix",
+			"description": "Pulihkan state player dengan benar saat checkpoint dimuat.",
+			"type": "bool",
+			"default": true
+		},
+		"macro-fps": {
+			"name": "Macro TPS",
+			"description": "TPS yang dipakai saat merekam dan memutar macro.",
+			"type": "int",
+			"default": 240,
+			"min": 60,
+			"max": 1000
+		},
+		"frame-offset": {
+			"name": "Frame Offset",
+			"description": "Geser semua input sebanyak N frame.",
+			"type": "int",
+			"default": 0,
+			"min": -8,
+			"max": 8
+		}
+	},
+	"tags": ["gameplay", "utility", "cheat"]
+}
