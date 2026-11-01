@@ -15,7 +15,7 @@ void onStoreCheckpoint(PlayLayer* pl, CheckpointObject* checkpoint) {
     CheckpointMarker marker;
     marker.frame = bot.currentFrame();
     marker.previousFrame = bot.previousFrame;
-    marker.seed = pl->m_level ? static_cast<unsigned int>(pl->m_level->m_randomSeed) : 0;
+    marker.seed = static_cast<unsigned int>(pl->m_randomSeed);
 
     if (pl->m_player1) marker.player1 = PlayerSnapshot::capture(pl->m_player1);
     if (pl->m_player2) marker.player2 = PlayerSnapshot::capture(pl->m_player2);
@@ -35,8 +35,8 @@ void onLoadCheckpoint(PlayLayer* pl, CheckpointObject* checkpoint) {
     auto& marker = it->second;
 
     // Restore the RNG so random triggers behave like they did while recording.
-    if (pl->m_level && marker.seed != 0) {
-        pl->m_level->m_randomSeed = marker.seed;
+    if (marker.seed != 0) {
+        pl->m_randomSeed = marker.seed;
     }
 
     if (pl->m_player1) marker.player1.apply(pl->m_player1);

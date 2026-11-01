@@ -27,8 +27,8 @@ protected:
     void onPage(CCObject*);
     void onFile(CCObject* sender);
 
-    CCLabelBMFont* m_statusLabel = nullptr;
-    CCLabelBMFont* m_fileLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_fileLabel = nullptr;
 
     cocos2d::CCMenu* m_menu = nullptr;
     cocos2d::CCMenu* m_fileMenu = nullptr;

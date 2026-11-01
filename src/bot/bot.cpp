@@ -59,13 +59,13 @@ bool Bot::startRecording(PlayLayer* pl) {
 
     replay = gdr::Replay{};
     replay.bot.name = "GDRBot";
-    replay.bot.version = Mod::get() ? Mod::get()->getVersion().toNonVString() : "1.0.0";
+    replay.bot.version = Mod::get() ? std::string(Mod::get()->getVersion().toNonVString()) : std::string("1.0.0");
     replay.framerate = tps();
     replay.gameVersion = 2.208f;
     replay.author = GameManager::get() ? GameManager::get()->m_playerName : "";
-    replay.levelInfo.id = pl->m_level ? pl->m_level->m_levelID.value() : 0;
-    replay.levelInfo.name = botutil::levelName(pl);
-    replay.seed = static_cast<int>(pl->m_level ? pl->m_level->m_randomSeed : 0);
+    replay.level.id = pl->m_level ? pl->m_level->m_levelID.value() : 0;
+    replay.level.name = botutil::levelName(pl);
+    replay.seed = static_cast<int>(pl->m_randomSeed);
     replay.ldm = GameManager::get() && GameManager::get()->getGameVariable("0096");
 
     markers.clear();
@@ -85,9 +85,11 @@ void Bot::stopRecording(PlayLayer* pl) {
     replay.duration = static_cast<double>(frame) / static_cast<double>(replay.framerate);
 
     if (pl && pl->m_level) {
-        replay.levelInfo.id = pl->m_level->m_levelID.value();
-        replay.levelInfo.name = botutil::levelName(pl);
+        replay.level.id = pl->m_level->m_levelID.value();
+        replay.level.name = botutil::levelName(pl);
     }
+
+    replay.seed = static_cast<int>(pl ? pl->m_randomSeed : 0);
 
     state = BotState::Idle;
     setStatus(fmt::format("Recorded {} inputs", replay.inputs.size()));
@@ -135,8 +137,8 @@ bool Bot::startPlaying(PlayLayer* pl) {
     respawnFrame = 0xFFFFFFFFu;
     previousFrame = 0;
 
-    if (pl->m_level && replay.levelInfo.id == 0) {
-        replay.levelInfo.id = pl->m_level->m_levelID.value();
+    if (pl->m_level && replay.level.id == 0) {
+        replay.level.id = pl->m_level->m_levelID.value();
     }
 
     state = BotState::Playing;
@@ -201,7 +203,7 @@ void Bot::syncToFrame(unsigned int frame) {
 
 std::filesystem::path Bot::macrosDir() const {
     auto mod = Mod::get();
-    auto dir = mod ? std::filesystem::path(mod->getSaveDir().toStdPath()) / "macros"
+    auto dir = mod ? std::filesystem::path(mod->getSaveDir()) / "macros"
                    : std::filesystem::path("macros");
 
     std::error_code ec;
@@ -283,12 +285,6 @@ void Bot::reset(PlayLayer* pl) {
 void Bot::setFrozen(bool value) {
     frozen = value;
     setStatus(value ? "Frozen (frame step)" : "Running");
-}
-
-void Bot::step() {
-    frozen = false;
-    stepBudget = std::max(1, stepBudget);
-    setStatus("Stepping");
 }
 
 // --------------------------------------------------------------- small helpers
