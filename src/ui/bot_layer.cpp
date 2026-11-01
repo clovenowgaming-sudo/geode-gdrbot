@@ -9,15 +9,35 @@ using namespace geode::prelude;
 
 namespace {
 
-CCMenuItemSpriteExtra* makeButton(char const* text, CCObject* target, SEL_MenuHandler handler) {
-    auto sprite = ButtonSprite::create(text, "bigFont.fnt", "GJ_button_01.png", .8f);
-    auto item = CCMenuItemSpriteExtra::create(sprite, target, handler);
-    if (text) item->setID(text);
-    return item;
+constexpr float kPanelWidth = 360.f;
+constexpr float kPanelHeight = 230.f;
+
+CCMenuItemSpriteExtra* makeButton(
+    char const* text, int width, char const* texture, CCObject* target, SEL_MenuHandler handler
+) {
+    auto sprite = ButtonSprite::create(text, width, true, "bigFont.fnt", texture, 30.f, .7f);
+    return CCMenuItemSpriteExtra::create(sprite, target, handler);
 }
 
-constexpr float kPanelWidth = 300.f;
-constexpr float kPanelHeight = 220.f;
+CCMenuItemSpriteExtra* makeArrow(bool right, CCObject* target, SEL_MenuHandler handler) {
+    auto sprite = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+    sprite->setScale(.9f);
+    if (right) sprite->setFlipX(true);
+    return CCMenuItemSpriteExtra::create(sprite, target, handler);
+}
+
+// Shrinks a label so it never gets wider than maxWidth.
+void fitLabel(CCLabelBMFont* label, float maxScale, float maxWidth) {
+    label->setScale(1.f);
+    float width = label->getContentSize().width;
+    float scale = maxScale;
+    if (width > 0.f) scale = std::min(maxScale, maxWidth / width);
+    label->setScale(scale);
+}
+
+void alertMessage(std::string const& text) {
+    FLAlertLayer::create("GDRBot", text, "OK")->show();
+}
 
 } // namespace
 
@@ -55,38 +75,69 @@ bool BotLayer::init(cocos2d::CCSize const& size) {
 
     auto center = cocos2d::CCPoint{size.width / 2.f, size.height / 2.f};
 
+    // main panel
     auto panel = cocos2d::extension::CCScale9Sprite::create("GJ_square01.png");
     panel->setContentSize({kPanelWidth, kPanelHeight});
     panel->setPosition(center);
     this->addChild(panel);
 
+    // title
     auto title = CCLabelBMFont::create("GDRBot", "bigFont.fnt");
     title->setScale(.7f);
-    title->setPosition({center.x, center.y + kPanelHeight / 2.f - 18.f});
+    title->setPosition({center.x, center.y + 96.f});
     this->addChild(title);
 
-    m_statusLabel = CCLabelBMFont::create("Idle", "goldFont.fnt");
-    m_statusLabel->setScale(.45f);
-    m_statusLabel->setPosition({center.x, center.y + kPanelHeight / 2.f - 38.f});
+    // status strip
+    auto statusBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png", {0.f, 0.f, 80.f, 80.f});
+    statusBg->setContentSize({300.f, 22.f});
+    statusBg->setColor({0, 0, 0});
+    statusBg->setOpacity(110);
+    statusBg->setPosition({center.x, center.y + 68.f});
+    this->addChild(statusBg);
+
+    m_statusLabel = CCLabelBMFont::create("Idle", "chatFont.fnt");
+    m_statusLabel->setScale(.6f);
+    m_statusLabel->setPosition({center.x, center.y + 68.f});
     this->addChild(m_statusLabel);
 
-    m_fileLabel = CCLabelBMFont::create("files", "chatFont.fnt");
-    m_fileLabel->setScale(.5f);
-    m_fileLabel->setAnchorPoint({0.f, .5f});
-    m_fileLabel->setPosition({center.x - kPanelWidth / 2.f + 14.f, center.y + kPanelHeight / 2.f - 54.f});
-    this->addChild(m_fileLabel);
+    // macro selector box
+    auto selectBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png", {0.f, 0.f, 80.f, 80.f});
+    selectBg->setContentSize({220.f, 34.f});
+    selectBg->setColor({0, 0, 0});
+    selectBg->setOpacity(130);
+    selectBg->setPosition({center.x, center.y + 30.f});
+    this->addChild(selectBg);
+
+    m_nameLabel = CCLabelBMFont::create("-", "bigFont.fnt");
+    m_nameLabel->setPosition({center.x, center.y + 30.f});
+    this->addChild(m_nameLabel);
+
+    m_infoLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_infoLabel->setScale(.55f);
+    m_infoLabel->setPosition({center.x, center.y + 4.f});
+    this->addChild(m_infoLabel);
+
+    m_footerLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_footerLabel->setScale(.5f);
+    m_footerLabel->setColor({170, 170, 170});
+    m_footerLabel->setPosition({center.x, center.y - 94.f});
+    this->addChild(m_footerLabel);
 
     m_menu = CCMenu::create();
     m_menu->setPosition({0.f, 0.f});
     this->addChild(m_menu);
 
-    m_fileMenu = CCMenu::create();
-    m_fileMenu->setPosition({0.f, 0.f});
-    this->addChild(m_fileMenu);
-
     buildButtons();
     refreshFileList();
+
+    // start with the macro that is already loaded, if there is one
+    auto& bot = Bot::get();
+    if (!bot.macroPath.empty()) selectPath(bot.macroPath);
+
+    updateSelector();
     refresh();
+
+    this->schedule(schedule_selector(BotLayer::onTick), .25f);
 
     return true;
 }
@@ -94,55 +145,32 @@ bool BotLayer::init(cocos2d::CCSize const& size) {
 void BotLayer::buildButtons() {
     auto center = cocos2d::CCPoint{m_size.width / 2.f, m_size.height / 2.f};
 
-    struct Entry {
-        char const* text;
-        SEL_MenuHandler handler;
-        float dx;
-        float dy;
+    auto add = [&](CCMenuItemSpriteExtra* item, float dx, float dy) {
+        item->setPosition({center.x + dx, center.y + dy});
+        m_menu->addChild(item);
     };
 
-    std::vector<Entry> entries = {
-        {"REC", menu_selector(BotLayer::onRecord), -105.f, 46.f},
-        {"PLAY", menu_selector(BotLayer::onPlay), -35.f, 46.f},
-        {"STOP", menu_selector(BotLayer::onStop), 35.f, 46.f},
-        {"SAVE", menu_selector(BotLayer::onSave), 105.f, 46.f},
-        {"RELOAD", menu_selector(BotLayer::onReload), -105.f, -kPanelHeight / 2.f + 22.f},
-        {"STEP", menu_selector(BotLayer::onStep), -35.f, -kPanelHeight / 2.f + 22.f},
-        {"<", menu_selector(BotLayer::onPage), 35.f, -kPanelHeight / 2.f + 22.f},
-        {">", menu_selector(BotLayer::onPage), 105.f, -kPanelHeight / 2.f + 22.f},
-        {"X", menu_selector(BotLayer::onClose), kPanelWidth / 2.f - 16.f, kPanelHeight / 2.f - 16.f},
-    };
+    // close (top left corner, like the vanilla popups)
+    auto closeSprite = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
+    auto closeBtn = CCMenuItemSpriteExtra::create(closeSprite, this, menu_selector(BotLayer::onClose));
+    add(closeBtn, -kPanelWidth / 2.f + 6.f, kPanelHeight / 2.f - 6.f);
 
-    for (auto& entry : entries) {
-        auto button = makeButton(entry.text, this, entry.handler);
-        button->setPosition({center.x + entry.dx, center.y + entry.dy});
-        m_menu->addChild(button);
-    }
+    // macro selector arrows
+    add(makeArrow(false, this, menu_selector(BotLayer::onPrev)), -138.f, 30.f);
+    add(makeArrow(true, this, menu_selector(BotLayer::onNext)), 138.f, 30.f);
+
+    // load row
+    add(makeButton("LOAD", 100, "GJ_button_02.png", this, menu_selector(BotLayer::onLoad)), -58.f, -22.f);
+    add(makeButton("RELOAD", 100, "GJ_button_04.png", this, menu_selector(BotLayer::onReload)), 58.f, -22.f);
+
+    // record / play row
+    add(makeButton("REC", 78, "GJ_button_06.png", this, menu_selector(BotLayer::onRecord)), -126.f, -60.f);
+    add(makeButton("PLAY", 78, "GJ_button_01.png", this, menu_selector(BotLayer::onPlay)), -42.f, -60.f);
+    add(makeButton("STOP", 78, "GJ_button_04.png", this, menu_selector(BotLayer::onStop)), 42.f, -60.f);
+    add(makeButton("SAVE", 78, "GJ_button_02.png", this, menu_selector(BotLayer::onSave)), 126.f, -60.f);
 }
 
-void BotLayer::buildFileList() {
-    m_fileMenu->removeAllChildren();
-
-    auto center = cocos2d::CCPoint{m_size.width / 2.f, m_size.height / 2.f};
-    float top = center.y + kPanelHeight / 2.f - 72.f;
-
-    for (int i = 0; i < m_perPage; i++) {
-        int index = m_page * m_perPage + i;
-        if (index < 0 || index >= static_cast<int>(m_files.size())) break;
-
-        auto label = m_files[index].stem().string();
-        if (label.size() > 24) label = label.substr(0, 24) + "..";
-
-        auto button = makeButton(label.c_str(), this, menu_selector(BotLayer::onFile));
-        button->setPosition({center.x, top - i * 20.f});
-        button->setScale(.75f);
-        m_fileMenu->addChild(button);
-    }
-
-    int pages = std::max(1, (static_cast<int>(m_files.size()) + m_perPage - 1) / m_perPage);
-    auto text = fmt::format("{} file(s) - page {}/{}", m_files.size(), m_page + 1, pages);
-    m_fileLabel->setString(text.c_str());
-}
+// ---------------------------------------------------------------- file list
 
 void BotLayer::refreshFileList() {
     m_files.clear();
@@ -162,21 +190,138 @@ void BotLayer::refreshFileList() {
 
     std::sort(m_files.begin(), m_files.end());
 
-    if (m_page * m_perPage >= static_cast<int>(m_files.size())) {
-        m_page = 0;
+    if (m_index >= static_cast<int>(m_files.size())) m_index = 0;
+    if (m_index < 0) m_index = 0;
+}
+
+void BotLayer::selectPath(std::filesystem::path const& path) {
+    auto it = std::find(m_files.begin(), m_files.end(), path);
+    if (it != m_files.end()) {
+        m_index = static_cast<int>(std::distance(m_files.begin(), it));
+    }
+}
+
+bool BotLayer::hasSelection() const {
+    return m_index >= 0 && m_index < static_cast<int>(m_files.size());
+}
+
+std::filesystem::path BotLayer::selectedPath() const {
+    if (!hasSelection()) return {};
+    return m_files[m_index];
+}
+
+void BotLayer::updateSelector() {
+    if (!hasSelection()) {
+        m_nameLabel->setString("No macros");
+        fitLabel(m_nameLabel, .6f, 200.f);
+        m_infoLabel->setString("Record a run, then press SAVE");
+        m_infoLabel->setColor({170, 170, 170});
+        return;
     }
 
-    buildFileList();
+    auto& bot = Bot::get();
+    auto path = selectedPath();
+
+    m_nameLabel->setString(path.stem().string().c_str());
+    fitLabel(m_nameLabel, .6f, 200.f);
+
+    bool loaded = bot.pendingReplay.has_value() && bot.macroPath == path;
+
+    std::string info = fmt::format("{}/{}   -   ", m_index + 1, m_files.size());
+    if (loaded) {
+        info += fmt::format("loaded, {} inputs", bot.pendingReplay->inputs.size());
+        m_infoLabel->setColor({120, 255, 120});
+    } else {
+        info += "not loaded";
+        m_infoLabel->setColor({190, 190, 190});
+    }
+    m_infoLabel->setString(info.c_str());
 }
 
 void BotLayer::refresh() {
     auto& bot = Bot::get();
 
     char const* state = "Idle";
-    if (bot.state == BotState::Recording) state = "Recording";
-    else if (bot.state == BotState::Playing) state = "Playing";
+    cocos2d::ccColor3B color{215, 215, 215};
 
-    m_statusLabel->setString(fmt::format("{} | {}", state, bot.statusText).c_str());
+    if (bot.state == BotState::Recording) {
+        state = "Recording";
+        color = {255, 90, 90};
+    } else if (bot.state == BotState::Playing) {
+        state = "Playing";
+        color = {120, 255, 120};
+    }
+
+    m_statusLabel->setString(fmt::format("{}  |  {}", state, bot.statusText).c_str());
+    m_statusLabel->setColor(color);
+    fitLabel(m_statusLabel, .6f, 285.f);
+
+    m_footerLabel->setString(
+        fmt::format("Practice fix: {}   |   TPS {}", bot.practiceFix() ? "ON" : "OFF", static_cast<int>(bot.tps())).c_str());
+}
+
+void BotLayer::onTick(float) {
+    updateSelector();
+    refresh();
+}
+
+// ------------------------------------------------------------------ actions
+
+bool BotLayer::loadSelected(bool silent) {
+    if (!hasSelection()) {
+        if (!silent) alertMessage("No macro selected.");
+        return false;
+    }
+
+    std::string error;
+    if (!Bot::get().load(selectedPath(), &error)) {
+        if (!silent) alertMessage(error.empty() ? "Failed to load." : error);
+        return false;
+    }
+
+    return true;
+}
+
+void BotLayer::onPrev(CCObject*) {
+    if (m_files.empty()) return;
+    int count = static_cast<int>(m_files.size());
+    m_index = (m_index - 1 + count) % count;
+    updateSelector();
+}
+
+void BotLayer::onNext(CCObject*) {
+    if (m_files.empty()) return;
+    int count = static_cast<int>(m_files.size());
+    m_index = (m_index + 1) % count;
+    updateSelector();
+}
+
+void BotLayer::onLoad(CCObject*) {
+    if (Bot::get().state == BotState::Recording) {
+        alertMessage("Stop recording first.");
+        return;
+    }
+
+    loadSelected(false);
+    updateSelector();
+    refresh();
+}
+
+void BotLayer::onReload(CCObject*) {
+    if (Bot::get().state == BotState::Recording) {
+        alertMessage("Stop recording first.");
+        return;
+    }
+
+    // rescan the folder, keep the same macro selected, and read its inputs again
+    auto current = selectedPath();
+    refreshFileList();
+    if (!current.empty()) selectPath(current);
+
+    if (hasSelection()) loadSelected(false);
+
+    updateSelector();
+    refresh();
 }
 
 void BotLayer::onRecord(CCObject*) {
@@ -184,7 +329,7 @@ void BotLayer::onRecord(CCObject*) {
     auto pl = PlayLayer::get();
 
     if (!pl) {
-        FLAlertLayer::create("GDRBot", "Start a level first.", "OK")->show();
+        alertMessage("Start a level first.");
         return;
     }
 
@@ -221,66 +366,11 @@ void BotLayer::onSave(CCObject*) {
     }
 
     if (!bot.save(name, &error)) {
-        FLAlertLayer::create("GDRBot", error.empty() ? "Failed to save." : error, "OK")->show();
+        alertMessage(error.empty() ? "Failed to save." : error);
     } else {
         refreshFileList();
-    }
-
-    refresh();
-}
-
-void BotLayer::onReload(CCObject*) {
-    refreshFileList();
-    refresh();
-}
-
-void BotLayer::onStep(CCObject*) {
-    auto& bot = Bot::get();
-    bot.setFrozen(!bot.frozen);
-    refresh();
-}
-
-void BotLayer::onClose(CCObject*) {
-    this->removeFromParentAndCleanup(true);
-}
-
-void BotLayer::keyBackClicked() {
-    this->removeFromParentAndCleanup(true);
-}
-
-void BotLayer::onPage(CCObject* sender) {
-    auto* node = typeinfo_cast<CCNode*>(sender);
-    std::string id;
-    if (node) id = node->getID();
-
-    int pages = std::max(1, (static_cast<int>(m_files.size()) + m_perPage - 1) / m_perPage);
-
-    if (id == ">") {
-        m_page = (m_page + 1) % pages;
-    } else {
-        m_page = (m_page - 1 + pages) % pages;
-    }
-
-    buildFileList();
-}
-
-void BotLayer::onFile(CCObject* sender) {
-    auto& bot = Bot::get();
-    auto* node = typeinfo_cast<CCNode*>(sender);
-    if (!node) return;
-
-    std::string id = node->getID();
-
-    auto it = std::find_if(m_files.begin(), m_files.end(), [&id](std::filesystem::path const& path) {
-        return path.stem().string() == id;
-    });
-
-    if (it == m_files.end()) return;
-
-    std::string error;
-    if (!bot.load(*it, &error)) {
-        FLAlertLayer::create("GDRBot", error.empty() ? "Failed to load." : error, "OK")->show();
-        return;
+        selectPath(bot.macroPath);
+        updateSelector();
     }
 
     refresh();
@@ -291,18 +381,36 @@ void BotLayer::onPlay(CCObject*) {
     auto pl = PlayLayer::get();
 
     if (!pl) {
-        FLAlertLayer::create("GDRBot", "Start a level first.", "OK")->show();
+        alertMessage("Start a level first.");
         return;
     }
 
-    if (!bot.pendingReplay) {
-        FLAlertLayer::create("GDRBot", "Pick a .gdr2 file from the list first.", "OK")->show();
+    if (bot.state == BotState::Recording) {
+        alertMessage("Stop recording first.");
         return;
+    }
+
+    // nothing loaded yet: use the macro that is selected in the list
+    if (!bot.pendingReplay) {
+        if (!hasSelection()) {
+            alertMessage("Pick a macro with < and > first.");
+            return;
+        }
+        if (!loadSelected(false)) return;
     }
 
     if (bot.startPlaying(pl) && bot.autoRestart()) {
         pl->resetLevelFromStart();
     }
 
+    updateSelector();
     refresh();
+}
+
+void BotLayer::onClose(CCObject*) {
+    this->removeFromParentAndCleanup(true);
+}
+
+void BotLayer::keyBackClicked() {
+    this->removeFromParentAndCleanup(true);
 }

@@ -48,20 +48,33 @@ class $modify(GDRBotPlayLayer, PlayLayer) {
     }
 
     void resetLevel() {
+        auto& bot = Bot::get();
+        bot.restoredByCheckpoint = false;
+
+        // resetLevel() loads the last practice checkpoint internally (through
+        // loadFromCheckpoint below). Only a reset that did NOT load a checkpoint
+        // starts the macro over from frame 0.
         PlayLayer::resetLevel();
 
-        auto& bot = Bot::get();
+        if (bot.restoredByCheckpoint) return;
+
         bot.previousFrame = 0;
 
         if (bot.state == BotState::Playing) {
             bot.actionIndex = 0;
             bot.respawnFrame = 0xFFFFFFFFu;
+        } else if (bot.state == BotState::Recording) {
+            // clean restart: drop the inputs of the failed attempt
+            bot.replay.inputs.clear();
+            bot.replay.frameFixes.clear();
         }
     }
 
     void loadFromCheckpoint(CheckpointObject* checkpoint) {
-        practice::onLoadCheckpoint(this, checkpoint);
+        // The game restores its own checkpoint data first; the practice fix is
+        // applied on top of it, afterwards, so it is not overwritten.
         PlayLayer::loadFromCheckpoint(checkpoint);
+        practice::onLoadCheckpoint(this, checkpoint);
     }
 
     void storeCheckpoint(CheckpointObject* checkpoint) {

@@ -39,6 +39,7 @@ public:
     bool suppressRecord = false;
 
     // practice fix
+    bool restoredByCheckpoint = false;
     std::unordered_map<CheckpointObject*, CheckpointMarker> markers;
 
     // misc
@@ -65,7 +66,7 @@ public:
     bool startPlaying(PlayLayer* pl);
     void stopPlaying(PlayLayer* pl);
     void applyInputs(unsigned int frame, GJBaseGameLayer* layer);
-    void syncToFrame(unsigned int frame);
+    void syncToFrame(unsigned int frame, GJBaseGameLayer* layer = nullptr);
 
     // files
     std::filesystem::path macrosDir() const;

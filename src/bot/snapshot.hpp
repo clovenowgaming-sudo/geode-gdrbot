@@ -100,4 +100,5 @@ struct CheckpointMarker {
     PlayerSnapshot player1;
     PlayerSnapshot player2;
     unsigned int seed = 0;
+    double levelTime = 0.0;
 };

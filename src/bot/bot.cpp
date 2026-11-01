@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
+#include <map>
 
 using namespace geode::prelude;
 
@@ -116,11 +117,11 @@ void Bot::trimRecordedInputs(unsigned int frame) {
     // the checkpoint are invalid and must be dropped, otherwise the macro
     // contains actions that will never happen on a clean playback.
     auto it = std::find_if(replay.inputs.begin(), replay.inputs.end(),
-        [frame](gdr::Input const& input) { return input.frame >= frame; });
+        [frame](gdr::Input const& input) { return input.frame > frame; });
     replay.inputs.erase(it, replay.inputs.end());
 
     auto fixes = std::find_if(replay.frameFixes.begin(), replay.frameFixes.end(),
-        [frame](gdr::FrameFix const& fix) { return fix.frame >= frame; });
+        [frame](gdr::FrameFix const& fix) { return fix.frame > frame; });
     replay.frameFixes.erase(fixes, replay.frameFixes.end());
 }
 
@@ -195,12 +196,30 @@ void Bot::applyInputs(unsigned int frame, GJBaseGameLayer* layer) {
     }
 }
 
-void Bot::syncToFrame(unsigned int frame) {
-    respawnFrame = frame;
+void Bot::syncToFrame(unsigned int frame, GJBaseGameLayer* layer) {
+    respawnFrame = 0xFFFFFFFFu;
 
+    // Next input to play is the first one after the checkpoint frame.
     auto it = std::find_if(replay.inputs.begin(), replay.inputs.end(),
-        [frame](gdr::Input const& input) { return input.frame >= frame; });
+        [frame](gdr::Input const& input) { return input.frame > frame; });
     actionIndex = static_cast<std::size_t>(std::distance(replay.inputs.begin(), it));
+
+    if (!layer) return;
+
+    // Rebuild which buttons were held at the checkpoint, so a click that began
+    // before the checkpoint keeps being held after loading it.
+    std::map<std::pair<int, bool>, bool> held;
+    for (std::size_t i = 0; i < actionIndex; i++) {
+        auto const& input = replay.inputs[i];
+        held[{input.button, input.player2}] = input.down;
+    }
+
+    if (layer->m_player1) layer->m_player1->releaseAllButtons();
+    if (layer->m_player2) layer->m_player2->releaseAllButtons();
+
+    for (auto const& [key, down] : held) {
+        if (down) layer->handleButton(true, key.first, !key.second);
+    }
 }
 
 // ---------------------------------------------------------------------- files
