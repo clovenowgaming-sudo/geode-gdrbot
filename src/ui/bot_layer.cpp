@@ -250,7 +250,8 @@ void BotLayer::keyBackClicked() {
 
 void BotLayer::onPage(CCObject* sender) {
     auto* node = typeinfo_cast<CCNode*>(sender);
-    std::string id = node ? node->getID() : std::string();
+    std::string id;
+    if (node) id = node->getID();
 
     int pages = std::max(1, (static_cast<int>(m_files.size()) + m_perPage - 1) / m_perPage);
 
