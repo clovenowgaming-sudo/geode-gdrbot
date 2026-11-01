@@ -59,10 +59,14 @@ bool Bot::startRecording(PlayLayer* pl) {
 
     replay = gdr::Replay{};
     replay.bot.name = "GDRBot";
-    replay.bot.version = Mod::get() ? std::string(Mod::get()->getVersion().toNonVString()) : std::string("1.0.0");
+    replay.bot.version = "1.0.0";
+    if (auto mod = Mod::get()) replay.bot.version = std::string(mod->getVersion().toNonVString());
     replay.framerate = tps();
     replay.gameVersion = 2.208f;
-    replay.author = GameManager::get() ? GameManager::get()->m_playerName : "";
+    replay.author = "Player";
+    if (auto gm = GameManager::get()) {
+        replay.author = std::string(gm->m_playerName);
+    }
     replay.level.id = pl->m_level ? pl->m_level->m_levelID.value() : 0;
     replay.level.name = botutil::levelName(pl);
     replay.seed = static_cast<int>(pl->m_randomSeed);
